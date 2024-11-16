@@ -22,6 +22,8 @@ func main() {
 
 	groupV1 := routers.Group("/v1")
 	groupV1.POST("/fortunetelling", controller.Fortunetelling(model))
+	groupV1.GET("/getfortunetelling", controller.GetFortuneTelling())
+	groupV1.DELETE("/deletefortunetelling", controller.DelFortuneTelling())
 
 	routers.Run()
 

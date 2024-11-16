@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -29,6 +30,8 @@ func Fortunetelling(model *openai.OpenAI) gin.HandlerFunc {
 			return
 		}
 
+		serverURL := os.Getenv("serverURL")
+
 		// Benzersiz bir dosya adı oluşturuyoruz
 		uniqueID := uuid.New().String()
 		extension := filepath.Ext(image.Filename) // Dosyanın orijinal uzantısını alıyoruz
@@ -41,13 +44,13 @@ func Fortunetelling(model *openai.OpenAI) gin.HandlerFunc {
 			return
 		}
 
-		newFilePath := "http://localhost:8080/uploads/" + fileName
+		newFilePath := serverURL + "uploads/" + fileName
 		fmt.Println("new file path", newFilePath)
 
-		// msg, err := model.NewChat(newFilePath)
-		// if err!=nil{
-		// 	return
-		// }
+		msg, err := model.NewChat(newFilePath)
+		if err != nil {
+			return
+		}
 
 		var fortuneTellig models.FortuneTelling
 		fortuneTellig.AiComment = "msg"
@@ -61,6 +64,71 @@ func Fortunetelling(model *openai.OpenAI) gin.HandlerFunc {
 		if errUpdate != nil {
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "oluşturuldu", "path": filePath})
+		c.JSON(http.StatusOK, gin.H{"message": "oluşturuldu", "path": filePath, "falci_baci": msg})
+	}
+}
+
+func GetFortuneTelling() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		uid := c.GetString("uid")
+		if uid == "" {
+			return
+		}
+
+		filter := bson.D{primitive.E{Key: "user_id", Value: uid}}
+		cursor, err := UserCollection.Find(ctx, filter)
+		if err != nil {
+			c.JSON(500, gin.H{})
+			return
+		}
+
+		var fortuneTelings []models.FortuneTelling
+		if err := cursor.All(ctx, &fortuneTelings); err != nil {
+			c.JSON(500, gin.H{
+				"error": "fallarınız alınırken hata oluştu",
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"fortunes": fortuneTelings,
+		})
+	}
+}
+
+func DelFortuneTelling() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		uid := c.GetString("uid")
+		if uid == "" {
+			return
+		}
+
+		fortuneID := c.Request.Header.Get("fortune_id")
+		if fortuneID == "" {
+			c.JSON(400, gin.H{
+				"error": "silinecek öğe bulunamadı",
+			})
+			return
+		}
+
+		filter := bson.D{primitive.E{Key: "user_id", Value: uid}}
+		update := bson.D{{Key: "$pull", Value: bson.D{{Key: "fortune_tellings", Value: bson.D{primitive.E{Key: "fortune_id", Value: fortuneID}}}}}}
+
+		_, err := UserCollection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error": "",
+			})
+			return
+		}
+		c.JSON(200, gin.H{
+			"message": "başarılı bir şekilde silindi",
+		})
 	}
 }
